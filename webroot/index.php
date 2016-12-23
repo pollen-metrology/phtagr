@@ -74,7 +74,7 @@ if (!defined('APP')) {
 //define('CAKE_CORE_INCLUDE_PATH', ROOT . DS . 'lib');
 
 // CakePHP is in phTagr's directory 'cakephp'
-define('CAKE_CORE_INCLUDE_PATH', ROOT . DS . 'cakephp' . DS . 'lib');
+#define('CAKE_CORE_INCLUDE_PATH', ROOT . DS . 'cakephp' . DS . 'lib');
 
 /**
  * Editing below this line should NOT be necessary.
