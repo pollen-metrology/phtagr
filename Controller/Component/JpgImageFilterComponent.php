@@ -11,24 +11,20 @@
  * @copyright     Copyright 2006-2013, Sebastian Felis (sebastian@phtagr.org)
  * @link          http://www.phtagr.org phTagr
  * @package       Phtagr
- * @since         phTagr 2.2b3
+ * @since         phTagr 2.3
  * @license       GPL-2.0 (http://www.opensource.org/licenses/GPL-2.0)
  */
 
+if (!App::import('Component', 'ImageFilter')) {
+  CakeLog::error("Could not load ImageFilter");
+}
 
-App::uses('BaseFilter', 'Component');
-
-/*
-*
-* Manages JPG images, for which we can have embedded IPTC and EXIF metadatas
-*
-*/
-class ImageFilterComponent extends BaseFilterComponent {
+class JpgImageFilterComponent extends ImageFilterComponent {
   var $controller = null;
   var $components = array('Command', 'FileManager', 'SidecarFilter', 'Exiftool');
 
   public function getName() {
-    return "Image";
+    return "JpgImage";
   }
 
   public function getExtensions() {
@@ -107,7 +103,10 @@ class ImageFilterComponent extends BaseFilterComponent {
       CakeLog::debug($media);
       $this->FilterManager->addError($filename, 'MediaSaveError');
       return false;
-    }
+   }
+
+    $this->write($filename, $media);
+
     if ($isNew) {
       $mediaId = $this->Media->getLastInsertID();
       if (!$this->controller->MyFile->setMedia($file, $mediaId)) {

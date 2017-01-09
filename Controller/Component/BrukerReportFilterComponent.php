@@ -11,31 +11,39 @@
  * @copyright     Copyright 2006-2013, Sebastian Felis (sebastian@phtagr.org)
  * @link          http://www.phtagr.org phTagr
  * @package       Phtagr
- * @since         phTagr 2.2b3
+ * @since         phTagr 2.3
  * @license       GPL-2.0 (http://www.opensource.org/licenses/GPL-2.0)
  */
+
+
 App::uses('BaseFilter', 'Component');
 
-/**
+/*
 *
+* Manages Bruker report files, which contains images in proprietary binary format
 *
-* Manages image file for which we have no backend for direct metadata writing
-*
-*
+* Allow metadata management with XMP sidecar file, if 'xmp.use.sidecar'
+* config option is active.
 */
-class ReadOnlyImageFilterComponent extends BaseFilterComponent {
+class BrukerReportFilterComponent extends BaseFilterComponent {
   var $controller = null;
-
-  public function initialize(Controller $controller) {
-    $this->controller = $controller;
-  }
+  var $components = array('Command', 'FileManager', 'SidecarFilter');
 
   public function getName() {
-    return "ReadOnlyImage";
+    return "BrukerReport";
   }
 
+  /*
+  * Bruker reports extension is 001, 002.. -> 999 
+  *
+  */
   public function getExtensions() {
-    return array('bmp', 'gif', 'png', 'ps');
+    $extension = array();
+    for($i = 0; $i < 1000; $i++)
+    {
+        $extension[] = sprintf('%03d', $i);
+    }
+    return $extension;
   }
 
   /**
@@ -45,19 +53,23 @@ class ReadOnlyImageFilterComponent extends BaseFilterComponent {
    * @param media Reference of Media model data
    * @param options Options
    *  - noSave if set dont save model data
-   * @return The image data array or False on error
+   * @return mixed The image data array or False on error
    */
   public function read(&$file, &$media = null, $options = array()) {
     $options = am(array('noSave' => false), $options);
-    $filename = $this->controller->MyFile->getFilename($file);
-
+    $filename = $this->MyFile->getFilename($file);
+    
     $isNew = false;
     if (!$media) {
-      $media = $this->controller->Media->create(array(
+      $media = $this->Media->create(array(
         'type' => MEDIA_TYPE_IMAGE,
         ), true);
+
+     // FIXME Create/use a placeholder image
+     CakeLog::debug(get_class($this) . "#read() : TODO : create new placeholder media");
+
       if ($this->controller->getUserId() != $file['File']['user_id']) {
-        $user = $this->controller->Media->User->findById($file['File']['user_id']);
+        $user = $this->Media->User->findById($file['File']['user_id']);
       } else {
         $user = $this->controller->getUser();
       }
@@ -66,21 +78,11 @@ class ReadOnlyImageFilterComponent extends BaseFilterComponent {
       $isNew = true;
     };
 
-    if (!isset($media['Media']['width']) || $media['Media']['width'] == 0 ||
-      !isset($media['Media']['height']) || $media['Media']['height'] == 0) {
-      $size = getimagesize($filename);
-      if ($size) {
-        $media['Media']['width'] = $size[0];
-        $media['Media']['height'] = $size[1];
-      } else {
-        CakeLog::error("Could not determine image size of $filename");
-        return false;
-      }
-    }
     $media['Media']['name'] = basename($filename);
     if (!isset($media['Media']['date'])) {
       $media['Media']['date'] = date('Y-m-d H:i:s', time());
     }
+
     if ($options['noSave']) {
       return $media;
     } elseif (!$this->controller->Media->save($media)) {
@@ -89,21 +91,26 @@ class ReadOnlyImageFilterComponent extends BaseFilterComponent {
       $this->FilterManager->addError($filename, 'MediaSaveError');
       return false;
     }
+
     if ($isNew) {
-      $mediaId = $this->controller->Media->getLastInsertID();
+      $mediaId = $this->Media->getLastInsertID();
+     
+      CakeLog::debug("GenericFilterComponent#read() new media ID : " . $mediaId);
+
       if (!$this->controller->MyFile->setMedia($file, $mediaId)) {
-        $this->controller->Media->delete($mediaId);
+        $this->Media->delete($mediaId);
         $this->FilterManager->addError($filename, 'FileSaveError');
         return false;
       } else {
         CakeLog::info("Created new Media (id $mediaId)");
-        $media = $this->controller->Media->findById($mediaId);
+        $media = $this->Media->findById($mediaId);
       }
     } else {
       CakeLog::debug("Updated media (id ".$media['Media']['id'].")");
     }
     $this->controller->MyFile->updateReaded($file);
     $this->controller->MyFile->setFlag($file, FILE_FLAG_DEPENDENT);
+
     return $media;
   }
 
@@ -113,15 +120,30 @@ class ReadOnlyImageFilterComponent extends BaseFilterComponent {
    * @param file File model data
    * @param media Media model data
    * @param options Array of options
-   * @return False on error
+   * @return mixed False on error
    */
   public function write(&$file, &$media, $options = array()) {
-    CakeLog::warning("Write action is not supported for {$file['File']['file']}");
+    if (!$file || !$media) {
+      CakeLog::error("File or media is empty");
+      return false;
+    }
     $filename = $this->controller->MyFile->getFilename($file);
-    $this->FilterManager->addError($filename, 'MetaDataWriteNotSupported');
+
+    if ($this->controller->getOption('xmp.use.sidecar', 0)) {
+      if ($this->SidecarFilter->hasSidecar($filename, true)) {
+        $filename_xmp = substr($filename, 0, strrpos($filename, '.') + 1) . 'xmp';
+        $sidecar = $this->MyFile->findByFilename($filename_xmp);
+        return ($this->SidecarFilter->write($sidecar, $media));
+      } else {
+        return false;
+      }
+    }
+
+    if (!file_exists($filename) || !is_writeable(dirname($filename)) || !is_writeable($filename)) {
+      $id = isset($media['Media']['id']) ? $media['Media']['id'] : 0;
+      CakeLog::warning("File: $filename (#$id) does not exists nor is readable");
+      return false;
+    }
     return false;
   }
-
 }
-
-?>

@@ -11,31 +11,21 @@
  * @copyright     Copyright 2006-2013, Sebastian Felis (sebastian@phtagr.org)
  * @link          http://www.phtagr.org phTagr
  * @package       Phtagr
- * @since         phTagr 2.2b3
+ * @since         phTagr 2.3
  * @license       GPL-2.0 (http://www.opensource.org/licenses/GPL-2.0)
  */
 
 
-App::uses('BaseFilter', 'Component');
-
-/*
-*
-* Manages JPG images, for which we can have embedded IPTC and EXIF metadatas
-*
-*/
-class ImageFilterComponent extends BaseFilterComponent {
+class PngImageFilterComponent extends BaseFilterComponent {
   var $controller = null;
   var $components = array('Command', 'FileManager', 'SidecarFilter', 'Exiftool');
 
   public function getName() {
-    return "Image";
+    return "PngImage";
   }
 
   public function getExtensions() {
-    return array(
-        'jpeg' => array('hasMetaData' => true),
-        'jpg' => array('hasMetaData' => true)
-        );
+    return array( 'png' => array('hasMetaData' => true));
   }
 
   /**

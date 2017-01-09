@@ -11,7 +11,7 @@
  * @copyright     Copyright 2006-2013, Sebastian Felis (sebastian@phtagr.org)
  * @link          http://www.phtagr.org phTagr
  * @package       Phtagr
- * @since         phTagr 2.2b3
+ * @since         phTagr 2.3
  * @license       GPL-2.0 (http://www.opensource.org/licenses/GPL-2.0)
  */
 
@@ -20,21 +20,21 @@ App::uses('BaseFilter', 'Component');
 
 /*
 *
-* Manages JPG images, for which we can have embedded IPTC and EXIF metadatas
+* Manages TIFF images. ExifTool can extract metadata from some of these
 *
 */
-class ImageFilterComponent extends BaseFilterComponent {
+class TiffImageFilterComponent extends BaseFilterComponent {
   var $controller = null;
   var $components = array('Command', 'FileManager', 'SidecarFilter', 'Exiftool');
 
   public function getName() {
-    return "Image";
+    return "TiffImage";
   }
 
   public function getExtensions() {
     return array(
-        'jpeg' => array('hasMetaData' => true),
-        'jpg' => array('hasMetaData' => true)
+        'tiff' => array('hasMetaData' => true),
+        'tif' => array('hasMetaData' => true)
         );
   }
 
@@ -86,6 +86,10 @@ class ImageFilterComponent extends BaseFilterComponent {
     } else {
       $this->_extractImageDataGetId3($media, $meta);
     }
+    
+    // condition file parsing  
+    $this->_readConditionFile($filename, $media);
+
     if ($media['Media']['name'] != basename($filename)) {
         $this->log(">>> File ". basename($filename) . " differs from {$media['Media']['name']} (extractImageData)", 'import');
     }
@@ -152,34 +156,55 @@ class ImageFilterComponent extends BaseFilterComponent {
     return $this->_extract($data, 'jpg/exif/EXIF/DateTimeOriginal', date('Y-m-d H:i:s', time()));
   }
 
-  private function _compute($value) {
-    if ($value && preg_match('/(\d+)\/(\d+)/', $value, $m)) {
-      return ($m[1] / $m[2]);
-    } else {
-      return $value;
-    }
-  }
 
-  private function _computeGps($values) {
-    if (!is_array($values) || count($values) < 3) {
-      return $values;
-    }
-
-    $d = $this->_compute($values[0]);
-    $m = $this->_compute($values[1]);
-    $s = $this->_compute($values[2]);
-
-    $v = floatVal($d + ($m / 60) + ($s / 3600));
-    return $v;
-  }
-
-  private function _computeSutter($value) {
-    if (!$value) {
-      return $value;
-    }
-
-    $v = 1 / pow(2, $this->_compute($value));
-    return $v;
+  /**
+  *
+  * Read Hitachi condition file, if any, and add its content to image metadata
+  *
+  */    
+  private function _readConditionFile($filename, &$media)
+  {
+        CakeLog::debug("Search condition file for : " . $filename);
+        $path_parts = pathinfo($filename);
+        $conditionFileFolder = $path_parts['dirname'] . '/' . $path_parts['basename'] . "_cnd";
+        if(is_dir($conditionFileFolder))
+        {    
+            CakeLog::debug("Condition file folder found");
+            $condTextConditionFile = $conditionFileFolder . "/" . "cond.txt";
+            if(is_file($condTextConditionFile))
+            {
+                    CakeLog::debug("'cond.txt' Condition file found");
+                    $fh = fopen($condTextConditionFile,'r');
+                    while ($line = fgets($fh)) 
+                    {
+                            $needle = '#';
+                            if(substr($line, 0, 1) != $needle)
+                            {
+                                $tokens = preg_split("/[\s]+/", $line);
+                                if(count($tokens) >= 2)
+                                {
+                                    CakeLog::debug("Adding metadata '" . $tokens[0] . "' => '". $tokens[1]. "'");
+                                    $media['Media'][$tokens[0]] = $tokens[1];
+                                    $media['Field'][$tokens[0]] = $tokens[1];
+                                }
+                                else
+                                {
+                                    CakeLog::debug("Ignore metadata line '$line'");
+                                }
+                            }
+                    }
+                    fclose($fh);
+            }
+            else
+            {
+                    CakeLog::debug("Condition file not found");
+            }
+        }
+        else
+        {
+            CakeLog::debug("No condition file folder");
+        }
+        return $media;
   }
 
   /**
@@ -202,27 +227,10 @@ class ImageFilterComponent extends BaseFilterComponent {
     $v['duration'] = -1;
     $v['orientation'] = $this->_extract($data, 'jpg/exif/IFD0/Orientation', 1);
 
-    $v['aperture'] = $this->_compute($this->_extract($data, 'jpg/exif/EXIF/ApertureValue', null));
-    $v['shutter'] = $this->_computeSutter($this->_extract($data, 'jpg/exif/EXIF/ShutterSpeedValue', null));
     $v['model'] = $this->_extract($data, 'jpg/exif/IFD0/Model', null);
     $v['iso'] = $this->_extract($data, 'jpg/exif/EXIF/ISOSpeedRatings', null);
+    
     //CakeLog::debug($data);
-
-    // fetch GPS coordinates
-    $latitude = $this->_computeGps($this->_extract($data, 'jpg/exif/GPS/GPSLatitude', null));
-    $latitudeRef = $this->_extract($data, 'jpg/exif/GPS/GPSLatitudeRef', null);
-    $longitude = $this->_computeGps($this->_extract($data, 'jpg/exif/GPS/GPSLongitude', null));
-    $longitudeRef = $this->_extract($data, 'jpg/exif/GPS/GPSLongitudeRef', null);
-    if ($latitude && $latitudeRef && $longitude && $longitudeRef) {
-      if ($latitudeRef == 'S' && $latitude > 0) {
-        $latitude *= -1;
-      }
-      if ($longitudeRef == 'W' && $longitude > 0) {
-        $longitude *= -1;
-      }
-      $v['latitude'] = $latitude;
-      $v['longitude'] = $longitude;
-    }
 
     // Associations to meta data: Tags, Categories, Locations
     foreach ($this->Exiftool->fieldMap as $field => $name) {

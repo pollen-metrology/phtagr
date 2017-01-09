@@ -188,9 +188,18 @@ class MediaController extends AppController
       $this->FilterManager->write($media);
     }
     CakeLog::info("Request of media {$file['Media']['id']}: file $id '{$file['File']['file']}'");
-    $filename = $this->MyFile->getFilename($file);
 
-    $this->response->file($filename, array('download' => true));
+    $filename = $this->MyFile->getFilename($file);
+    
+    // If the requested file has companion medias, 
+    // a zip must be created containing needed media
+    // *and* companion medias
+    $media = $this->Media->findById($file['Media']['id']);
+    if($media && $media->hasCompanion()){
+
+    }else{
+            $this->response->file($filename, array('download' => true));
+    }
     return $this->response;
   }
 
